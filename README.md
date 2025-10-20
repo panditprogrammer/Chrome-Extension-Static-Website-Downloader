@@ -53,3 +53,11 @@ You’ll get this folder structure:
             └── banner/
                 └── banner-thumb-01.png
 ```
+
+
+
+### Need to fix this type of files 
+
+```
+<div data-background="src/image/filename.png"></div>
+```

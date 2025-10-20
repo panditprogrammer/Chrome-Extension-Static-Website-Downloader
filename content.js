@@ -3,11 +3,20 @@
   const baseUrl = location.origin;
 
   // Step 1️⃣: Download main HTML
+
+  // 🧩 Step 1️⃣: Generate dynamic HTML filename based on current page
+  let pagePath = location.pathname;
+  if (pagePath === "/" || pagePath === "") pagePath = "/index.html";
+  else if (!pagePath.endsWith(".html")) pagePath += ".html";
+
+  const htmlFilename = `${domain}${pagePath}`;
+
+  // Download main HTML
   const html = document.documentElement.outerHTML;
   chrome.runtime.sendMessage({
     action: "downloadFile",
     url: "data:text/html;charset=utf-8," + encodeURIComponent(html),
-    filename: `${domain}/index.html`,
+    filename: htmlFilename.replace(/^\/+/, ""),
   });
 
   // Step 2️⃣: Collect main asset URLs
