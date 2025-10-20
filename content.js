@@ -2,7 +2,7 @@
   const domain = location.hostname;
   const baseUrl = location.origin;
 
-  // 1️⃣ Download the HTML
+  // Step 1: Download main HTML
   const html = document.documentElement.outerHTML;
   chrome.runtime.sendMessage({
     action: "downloadFile",
@@ -10,76 +10,24 @@
     filename: `${domain}/index.html`,
   });
 
-  // 2️⃣ Collect all linked/static files
-  const allUrls = new Set();
-
-  // From HTML tags
-  const selectors = [
-    "link[href]",
-    "script[src]",
-    "img[src]",
-    "source[src]",
-    "video[src]",
-    "audio[src]",
-    "iframe[src]",
-    "object[data]"
-  ];
-  selectors.forEach(sel => {
-    document.querySelectorAll(sel).forEach(el => {
-      const attr = el.getAttribute("src") || el.getAttribute("href") || el.getAttribute("data");
-      if (attr) allUrls.add(new URL(attr, baseUrl).href);
-    });
-  });
-
-  // From srcset
-  document.querySelectorAll("img[srcset], source[srcset]").forEach(el => {
-    const srcset = el.getAttribute("srcset");
-    if (srcset) {
-      srcset.split(",").forEach(s => {
-        const url = s.trim().split(" ")[0];
-        if (url) allUrls.add(new URL(url, baseUrl).href);
-      });
-    }
-  });
-
-  // From inline CSS style attributes
-  document.querySelectorAll("[style]").forEach(el => {
-    const style = el.getAttribute("style");
-    const matches = style.match(/url\(['"]?([^'")]+)['"]?\)/g);
-    if (matches) {
-      matches.forEach(m => {
-        const u = m.match(/url\(['"]?([^'")]+)['"]?\)/)[1];
-        if (u) allUrls.add(new URL(u, baseUrl).href);
-      });
-    }
-  });
-
-  // From CSS files - extract URLs recursively (for fonts, bg images, SCSS, etc.)
+  // Step 2: Collect resource URLs
   const cssLinks = [...document.querySelectorAll("link[rel='stylesheet']")].map(l => l.href);
-  for (const cssUrl of cssLinks) {
-    try {
-      const res = await fetch(cssUrl);
-      const text = await res.text();
-      const urlsInCss = [...text.matchAll(/url\(['"]?([^'")]+)['"]?\)/g)].map(m => m[1]);
-      urlsInCss.forEach(u => {
-        const full = new URL(u, cssUrl).href;
-        allUrls.add(full);
-      });
-    } catch (e) {
-      console.warn("Failed reading CSS:", cssUrl, e);
-    }
-  }
+  const jsLinks = [...document.querySelectorAll("script[src]")].map(s => s.src);
+  const images = [...document.images].map(i => i.src);
+  const srcsets = [...document.querySelectorAll("img[srcset], source[srcset]")]
+    .flatMap(el => (el.getAttribute("srcset") || "").split(",").map(s => s.trim().split(" ")[0]))
+    .filter(Boolean);
 
-  // Add CSS and JS files themselves
-  cssLinks.forEach(u => allUrls.add(u));
-  [...document.querySelectorAll("script[src]")].forEach(s => allUrls.add(s.src));
+  const allFiles = [...new Set([...cssLinks, ...jsLinks, ...images, ...srcsets])]
+    .filter(Boolean)
+    .map(url => new URL(url, baseUrl).href);
 
-  // 3️⃣ Send each file to background for download
-  for (const fileUrl of allUrls) {
+  // Step 3: Queue downloads preserving structure
+  for (const fileUrl of allFiles) {
     try {
       const urlObj = new URL(fileUrl);
-      const fullPath = `${urlObj.hostname}${urlObj.pathname}`;
-      const cleanPath = fullPath.replace(/^\/+/, "");
+      const path = urlObj.hostname + urlObj.pathname; // includes domain and path
+      const cleanPath = path.replace(/^\/+/, ""); // remove leading slashes
       const filename = cleanPath.endsWith("/") ? cleanPath + "index.html" : cleanPath;
 
       chrome.runtime.sendMessage({
@@ -88,9 +36,9 @@
         filename,
       });
     } catch (e) {
-      console.warn("Error processing:", fileUrl, e);
+      console.warn("Error processing URL:", fileUrl, e);
     }
   }
 
-  alert(`Downloading ${allUrls.size + 1} files including fonts, SCSS, and media.`);
+  alert(`Downloading ${allFiles.length + 1} files. Existing files will be replaced.`);
 })();
